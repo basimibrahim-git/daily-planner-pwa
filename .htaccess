@@ -1,0 +1,11 @@
+# These two files are what the browser uses to decide whether a new version
+# of the app is available. If a host or CDN caches them for any length of
+# time, updates you deploy can silently fail to reach visitors' browsers —
+# they keep running whatever service worker/HTML they already have.
+<IfModule mod_headers.c>
+  <FilesMatch "^(service-worker\.js|index\.html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>
