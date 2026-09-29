@@ -2,21 +2,20 @@ import {
   fetchItems, fetchEntries, fetchHistory, setEntry, setNote, auth,
   fetchTodaysDua, fetchFavoriteDuas, duaFavorite,
 } from './api.js';
-import { renderChecklistHtml, bindChecklist, bindChecklistDoodles, computeStats } from './ui-checklist.js';
-import { doodlePadHtml, bindDoodlePad } from './ui-doodle.js';
+import { renderChecklistHtml, bindChecklist, computeStats } from './ui-checklist.js';
+import { mountMoodQuickCard } from './ui-mood.js';
 import { icon, QUOTES, todayIndex } from './data.js';
 import { todayStr, addDays, friendlyDate, debounce, escapeHtml } from './utils.js';
 import { showToast, openModal, closeModal } from './ui-common.js';
 import { canInstall, promptInstall } from './install.js';
 import { openItemForm } from './ui-item-form.js';
 
-export function createTodayView({ onLogout, onOpenHistory }) {
+export function createTodayView({ onLogout, onOpenHistory, onOpenMood }) {
   let container = null;
   let date = todayStr();
   let items = [];
   let entries = {};
   let note = '';
-  let noteDoodle = null;
   let streak = 0;
   let lastOfflineToast = 0;
   let screen = 'overview'; // 'overview' | 'category' | 'favorites'
@@ -26,7 +25,7 @@ export function createTodayView({ onLogout, onOpenHistory }) {
 
   async function saveNote() {
     try {
-      const res = await setNote(date, note, noteDoodle);
+      const res = await setNote(date, note);
       if (res.offline) maybeToastOffline();
     } catch (e) {
       showToast(`Could not save note: ${e.message}`, 'error');
@@ -54,7 +53,6 @@ export function createTodayView({ onLogout, onOpenHistory }) {
       items = itemsRes.items;
       entries = entriesRes.entries || {};
       note = entriesRes.note || '';
-      noteDoodle = entriesRes.noteDoodle || null;
       if (itemsRes.offline || entriesRes.offline) {
         showToast("You're offline — showing your last saved planner.", 'offline');
       }
@@ -148,6 +146,8 @@ export function createTodayView({ onLogout, onOpenHistory }) {
         </div>
       </div>
 
+      ${isToday ? '<div id="mood-quick"></div>' : ''}
+
       ${renderDuaCardHtml()}
 
       <div class="category-grid">
@@ -181,9 +181,11 @@ export function createTodayView({ onLogout, onOpenHistory }) {
       <div class="feature-card notes-card">
         <div class="category-title">${icon('edit')} Notes</div>
         <textarea id="notes-input" placeholder="Anything else on your mind today...">${escapeHtml(note)}</textarea>
-        ${date <= todayStr() ? doodlePadHtml('daily-note') : ''}
       </div>
     `;
+
+    const moodEl = container.querySelector('#mood-quick');
+    if (moodEl) mountMoodQuickCard(moodEl, { onOpenMood });
 
     container.querySelectorAll('.category-card').forEach((card) =>
       card.addEventListener('click', () => {
@@ -199,17 +201,6 @@ export function createTodayView({ onLogout, onOpenHistory }) {
       note = e.target.value;
       debouncedSaveNote();
     });
-
-    const doodlePad = container.querySelector('[data-doodle-key="daily-note"]');
-    if (doodlePad) {
-      bindDoodlePad(doodlePad, {
-        initialDataUrl: noteDoodle,
-        onChange: (dataUrl) => {
-          noteDoodle = dataUrl;
-          saveNote();
-        },
-      });
-    }
 
     container.querySelector('#prev-day').addEventListener('click', () => changeDate(addDays(date, -1)));
     const nextBtn = container.querySelector('#next-day');
@@ -416,19 +407,6 @@ export function createTodayView({ onLogout, onOpenHistory }) {
           if (res.offline) maybeToastOffline();
         } catch (e) {
           showToast(`Could not save note: ${e.message}`, 'error');
-        }
-      },
-    });
-    bindChecklistDoodles(checklistEl, {
-      getItems: () => items,
-      getEntries: () => entries,
-      onNoteChange: async (item, value) => {
-        entries = { ...entries, [item.id]: value };
-        try {
-          const res = await setEntry(date, item.id, value);
-          if (res.offline) maybeToastOffline();
-        } catch (e) {
-          showToast(`Could not save doodle: ${e.message}`, 'error');
         }
       },
     });

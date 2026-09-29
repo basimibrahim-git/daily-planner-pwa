@@ -7,6 +7,11 @@ function isValidDate(string $date): bool
     return $d && $d->format('Y-m-d') === $date;
 }
 
+function isValidColor(string $color): bool
+{
+    return (bool) preg_match('/^(#[0-9a-fA-F]{6}|hsl\(\d{1,3}, ?\d{1,3}%, ?\d{1,3}%\))$/', $color);
+}
+
 // 'standard' items store their entry value as JSON: {"checked":0|1,"count":number}.
 // 'text' items store their entry value as a plain string.
 function decodeStandardValue(?string $raw): array

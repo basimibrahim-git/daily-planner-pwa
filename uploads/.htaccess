@@ -1,0 +1,2 @@
+# Photos are only served through api/photo.php, which checks you're logged in.
+Require all denied

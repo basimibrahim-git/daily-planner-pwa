@@ -1,8 +1,9 @@
-import { fetchGratitude, addGratitude, randomGratitude, deleteGratitude } from './api.js';
+import { fetchGratitude, addGratitude, randomGratitude, deleteGratitude, photoUrl } from './api.js';
 import { cacheGet } from './db-local.js';
 import { icon } from './data.js';
 import { escapeHtml } from './utils.js';
 import { showToast, openModal, closeModal } from './ui-common.js';
+import { colorPickerHtml, bindColorPicker, isValidColor } from './ui-color-picker.js';
 
 const PALETTE = ['#F0729A', '#E8B84B', '#6FB3E0', '#5FC9A8', '#A98FD9', '#F0956B', '#F0D45A', '#C7568C'];
 const MAX_VISUAL_PAPERS = 26; // the jar is visually "full" around this many notes
@@ -213,10 +214,109 @@ function playPickAnimation(jarRect) {
   });
 }
 
+
+const FONTS = [
+  { key: 'caveat', label: 'Handwritten', family: "'Caveat', cursive", scale: 1.25 },
+  { key: 'patrick', label: 'Marker', family: "'Patrick Hand', cursive", scale: 1.1 },
+  { key: 'dancing', label: 'Script', family: "'Dancing Script', cursive", scale: 1.2 },
+  { key: 'quicksand', label: 'Rounded', family: "'Quicksand', sans-serif", scale: 1 },
+  { key: 'typewriter', label: 'Typewriter', family: "'Special Elite', monospace", scale: 0.95 },
+  { key: 'playfair', label: 'Classic', family: "'Playfair Display', serif", scale: 1 },
+];
+const SIZES = [
+  { key: 's', label: 'S', px: 15 },
+  { key: 'm', label: 'M', px: 19 },
+  { key: 'l', label: 'L', px: 24 },
+  { key: 'xl', label: 'XL', px: 30 },
+];
+const DEFAULT_STYLE = { font: 'caveat', size: 'm', color: '#4A3B5C', bold: 0, italic: 0 };
+const STYLE_STORAGE_KEY = 'planner:gratitude-style';
+const MAX_PHOTOS = 3;
+const MAX_PHOTO_DIM = 1600;
+
+function styleCss(style) {
+  const s = { ...DEFAULT_STYLE, ...(style || {}) };
+  const font = FONTS.find((f) => f.key === s.font) || FONTS[0];
+  const size = SIZES.find((z) => z.key === s.size) || SIZES[1];
+  const color = isValidColor(s.color) ? s.color : DEFAULT_STYLE.color;
+  return [
+    `font-family:${font.family}`,
+    `font-size:${Math.round(size.px * font.scale)}px`,
+    `color:${color}`,
+    `font-weight:${s.bold ? 700 : 500}`,
+    `font-style:${s.italic ? 'italic' : 'normal'}`,
+  ].join(';');
+}
+
+function loadLastStyle() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STYLE_STORAGE_KEY) || 'null');
+    return saved ? { ...DEFAULT_STYLE, ...saved } : { ...DEFAULT_STYLE };
+  } catch {
+    return { ...DEFAULT_STYLE };
+  }
+}
+
+function saveLastStyle(style) {
+  try {
+    localStorage.setItem(STYLE_STORAGE_KEY, JSON.stringify(style));
+  } catch {
+    /* just a convenience; fine to lose */
+  }
+}
+
+function loadImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('unreadable image'));
+    };
+    img.src = url;
+  });
+}
+
+// Shrinks a phone photo to at most MAX_PHOTO_DIM on its longest side and
+// re-encodes it as JPEG, so uploads stay a few hundred KB instead of several MB.
+async function compressImage(file) {
+  let source;
+  try {
+    source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    source = await loadImageElement(file);
+  }
+  const w = source.width;
+  const h = source.height;
+  const scale = Math.min(1, MAX_PHOTO_DIM / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close?.();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+  if (!blob) throw new Error('could not encode image');
+  return blob;
+}
+
+function openLightbox(src) {
+  const el = document.createElement('div');
+  el.className = 'lightbox';
+  el.innerHTML = `<img src="${escapeHtml(src)}" alt="Gratitude photo" /><button class="lightbox-close" aria-label="Close">${icon('x')}</button>`;
+  el.addEventListener('click', () => el.remove());
+  document.body.appendChild(el);
+}
+
 export function createGratitudeView() {
   let container = null;
   let entries = [];
   let count = 0;
+  let style = loadLastStyle();
+  let pendingPhotos = []; // [{ blob, url }]
 
   async function mount(root) {
     container = root;
@@ -249,9 +349,36 @@ export function createGratitudeView() {
       <div class="jar-wrap" id="jar-wrap">${jarSvg(count)}</div>
       <div class="gratitude-count">${count} thing${count === 1 ? '' : 's'} you're grateful for</div>
 
-      <div class="gratitude-input-row">
-        <textarea id="gratitude-input" rows="1" placeholder="I'm grateful for..." maxlength="500"></textarea>
-        <button class="gratitude-add-btn" id="gratitude-add" aria-label="Add to jar">${icon('plus')}</button>
+      <div class="gratitude-compose">
+        <div class="gratitude-input-row">
+          <textarea id="gratitude-input" rows="1" placeholder="I'm grateful for..." maxlength="500" style="${styleCss(style)}"></textarea>
+          <button class="gratitude-add-btn" id="gratitude-add" aria-label="Add to jar">${icon('plus')}</button>
+        </div>
+        <div class="photo-previews" id="photo-previews"></div>
+        <div class="compose-tools">
+          <button type="button" class="tool-btn" id="toggle-style" aria-expanded="false"><span class="tool-aa">Aa</span> Style</button>
+          <button type="button" class="tool-btn" id="add-photo">${icon('image')} Photo <span class="tool-count" id="photo-count"></span></button>
+          <input type="file" id="photo-input" accept="image/*" multiple hidden />
+        </div>
+        <div class="style-panel hidden" id="style-panel">
+          <div class="style-label">Font</div>
+          <div class="font-chips">
+            ${FONTS.map(
+              (f) => `<button type="button" class="font-chip ${f.key === style.font ? 'selected' : ''}" data-font="${f.key}" style="font-family:${f.family}">${f.label}</button>`
+            ).join('')}
+          </div>
+          <div class="style-label">Size &amp; emphasis</div>
+          <div class="radio-group">
+            ${SIZES.map(
+              (z) => `<button type="button" class="radio-chip ${z.key === style.size ? 'selected' : ''}" data-size="${z.key}">${z.label}</button>`
+            ).join('')}
+            <span class="chip-divider"></span>
+            <button type="button" class="radio-chip ${style.bold ? 'selected' : ''}" data-toggle="bold" aria-label="Bold"><b>B</b></button>
+            <button type="button" class="radio-chip ${style.italic ? 'selected' : ''}" data-toggle="italic" aria-label="Italic"><i>I</i></button>
+          </div>
+          <div class="style-label">Color</div>
+          ${colorPickerHtml(style.color)}
+        </div>
       </div>
 
       <button class="btn btn-ghost btn-block" id="gratitude-random">${icon('shuffle')} Pick one from the jar</button>
@@ -268,24 +395,134 @@ export function createGratitudeView() {
         submit();
       }
     });
+    input.addEventListener('input', () => autoGrow(input));
+
+    bindStylePanel(input);
+    bindPhotoPicker();
+    renderPhotoPreviews();
 
     container.querySelector('#gratitude-random').addEventListener('click', randomFlow);
   }
 
+  function autoGrow(input) {
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight + 3, 180)}px`;
+  }
+
+  function bindStylePanel(input) {
+    const panel = container.querySelector('#style-panel');
+    const toggle = container.querySelector('#toggle-style');
+    toggle.addEventListener('click', () => {
+      const open = panel.classList.toggle('hidden') === false;
+      toggle.classList.toggle('active', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+
+    const apply = () => {
+      input.setAttribute('style', styleCss(style));
+      autoGrow(input);
+      saveLastStyle(style);
+    };
+
+    panel.querySelectorAll('[data-font]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        style = { ...style, font: btn.dataset.font };
+        panel.querySelectorAll('[data-font]').forEach((b) => b.classList.toggle('selected', b === btn));
+        apply();
+      })
+    );
+    panel.querySelectorAll('[data-size]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        style = { ...style, size: btn.dataset.size };
+        panel.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('selected', b === btn));
+        apply();
+      })
+    );
+    panel.querySelectorAll('[data-toggle]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.toggle;
+        style = { ...style, [key]: style[key] ? 0 : 1 };
+        btn.classList.toggle('selected', !!style[key]);
+        apply();
+      })
+    );
+    bindColorPicker(panel.querySelector('.color-picker'), {
+      initial: style.color,
+      onChange: (color) => {
+        style = { ...style, color };
+        apply();
+      },
+    });
+  }
+
+  function bindPhotoPicker() {
+    const fileInput = container.querySelector('#photo-input');
+    container.querySelector('#add-photo').addEventListener('click', () => {
+      if (pendingPhotos.length >= MAX_PHOTOS) {
+        showToast(`Up to ${MAX_PHOTOS} photos per note.`);
+        return;
+      }
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', async () => {
+      const files = [...fileInput.files];
+      fileInput.value = '';
+      const room = MAX_PHOTOS - pendingPhotos.length;
+      if (files.length > room) showToast(`Only ${MAX_PHOTOS} photos per note — added the first ${room}.`);
+      for (const file of files.slice(0, room)) {
+        try {
+          const blob = await compressImage(file);
+          pendingPhotos.push({ blob, url: URL.createObjectURL(blob) });
+        } catch {
+          showToast("Couldn't read that photo — try a JPEG or PNG.", 'error');
+        }
+      }
+      renderPhotoPreviews();
+    });
+  }
+
+  function renderPhotoPreviews() {
+    const wrap = container.querySelector('#photo-previews');
+    const countEl = container.querySelector('#photo-count');
+    if (!wrap) return;
+    wrap.innerHTML = pendingPhotos
+      .map(
+        (p, i) => `
+        <div class="photo-thumb">
+          <img src="${p.url}" alt="Attached photo ${i + 1}" />
+          <button type="button" class="photo-remove" data-remove="${i}" aria-label="Remove photo">${icon('x')}</button>
+        </div>`
+      )
+      .join('');
+    countEl.textContent = pendingPhotos.length ? `${pendingPhotos.length}/${MAX_PHOTOS}` : '';
+    wrap.querySelectorAll('[data-remove]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const [removed] = pendingPhotos.splice(Number(btn.dataset.remove), 1);
+        URL.revokeObjectURL(removed.url);
+        renderPhotoPreviews();
+      })
+    );
+  }
+
   async function addFlow(input, addBtn) {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text && pendingPhotos.length === 0) return;
     addBtn.disabled = true;
 
+    const photos = pendingPhotos;
+    const noteStyle = { ...style };
     const jarWrap = container.querySelector('#jar-wrap');
     const animPromise = jarWrap
       ? playAddAnimation(addBtn.getBoundingClientRect(), jarWrap.getBoundingClientRect(), PALETTE[count % PALETTE.length])
       : Promise.resolve();
     input.value = '';
+    autoGrow(input);
+    pendingPhotos = [];
+    renderPhotoPreviews();
 
     const [, res] = await Promise.all([
       animPromise,
-      addGratitude(text).catch((e) => {
+      addGratitude(text, noteStyle, photos.map((p) => p.blob)).catch((e) => {
         showToast(`Could not save: ${e.message}`, 'error');
         return null;
       }),
@@ -293,11 +530,20 @@ export function createGratitudeView() {
 
     if (res) {
       count = res.count;
-      entries = [{ id: `pending-${Date.now()}`, text, created_at: new Date().toISOString() }, ...entries];
+      entries = [
+        { id: res.id ?? `pending-${Date.now()}`, text, style: noteStyle, photos: [], created_at: new Date().toISOString() },
+        ...entries,
+      ];
+      photos.forEach((p) => URL.revokeObjectURL(p.url));
       if (res.offline) showToast("You're offline — saved on this device, will sync later.", 'offline');
+      updateJarDisplay();
+    } else {
+      // Put the note back so nothing typed or attached is lost.
+      input.value = text;
+      autoGrow(input);
+      pendingPhotos = photos;
+      renderPhotoPreviews();
     }
-
-    updateJarDisplay();
     addBtn.disabled = false;
   }
 
@@ -348,10 +594,18 @@ export function createGratitudeView() {
   }
 
   function showReveal(entry) {
+    const photos = entry.photos || [];
     const sheet = openModal(`
       <div class="gratitude-reveal">
         <div class="fold-icon">${icon('jar')}</div>
-        <div class="reveal-text">${escapeHtml(entry.text)}</div>
+        ${entry.text ? `<div class="reveal-text" style="${styleCss(entry.style)}">${escapeHtml(entry.text)}</div>` : ''}
+        ${
+          photos.length
+            ? `<div class="reveal-photos count-${photos.length}">
+                ${photos.map((id) => `<button type="button" class="reveal-photo" data-photo="${id}"><img src="${photoUrl(id)}" alt="Gratitude photo" loading="lazy" /></button>`).join('')}
+              </div>`
+            : ''
+        }
         <div class="reveal-date">${entry.created_at ? new Date(entry.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div>
         <div class="modal-actions">
           <button class="btn btn-ghost btn-block" id="close-reveal">Close</button>
@@ -360,6 +614,9 @@ export function createGratitudeView() {
         <button class="reveal-delete-link" id="delete-reveal">${icon('trash')} Delete this one</button>
       </div>
     `);
+    sheet.querySelectorAll('[data-photo]').forEach((btn) =>
+      btn.addEventListener('click', () => openLightbox(photoUrl(btn.dataset.photo)))
+    );
     sheet.querySelector('#close-reveal').addEventListener('click', closeModal);
     sheet.querySelector('#another-reveal').addEventListener('click', async () => {
       closeModal();
@@ -369,9 +626,11 @@ export function createGratitudeView() {
   }
 
   function showDeleteConfirm(entry, sheet) {
+    const what = entry.text ? `"${escapeHtml(entry.text)}"` : 'This note';
+    const photoNote = entry.photos?.length ? ' along with its photos' : '';
     sheet.innerHTML = `
       <h2>Delete this one?</h2>
-      <p>"${escapeHtml(entry.text)}" will be removed from your jar for good.</p>
+      <p>${what} will be removed from your jar${photoNote} for good.</p>
       <div class="modal-actions">
         <button class="btn btn-ghost btn-block" id="cancel-delete">Cancel</button>
         <button class="btn btn-danger btn-block" id="confirm-delete">${icon('trash')} Delete</button>

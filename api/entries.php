@@ -25,7 +25,7 @@ if ($method === 'GET') {
         $entries[(int) $row['item_id']] = $row['value'];
     }
 
-    $noteStmt = db()->prepare('SELECT note, doodle FROM daily_notes WHERE entry_date = ?');
+    $noteStmt = db()->prepare('SELECT note FROM daily_notes WHERE entry_date = ?');
     $noteStmt->execute([$date]);
     $noteRow = $noteStmt->fetch();
 
@@ -34,7 +34,6 @@ if ($method === 'GET') {
         'items' => $items,
         'entries' => $entries,
         'note' => $noteRow ? $noteRow['note'] : '',
-        'noteDoodle' => $noteRow ? $noteRow['doodle'] : null,
     ]);
 }
 
@@ -48,12 +47,11 @@ if ($method === 'POST') {
             fail('Valid date is required');
         }
         $note = (string) ($body['note'] ?? '');
-        $doodle = array_key_exists('doodle', $body) ? $body['doodle'] : null;
         $stmt = db()->prepare(
-            'INSERT INTO daily_notes (entry_date, note, doodle) VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE note = VALUES(note), doodle = VALUES(doodle)'
+            'INSERT INTO daily_notes (entry_date, note) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE note = VALUES(note)'
         );
-        $stmt->execute([$date, $note, $doodle]);
+        $stmt->execute([$date, $note]);
         respond(['ok' => true]);
     }
 

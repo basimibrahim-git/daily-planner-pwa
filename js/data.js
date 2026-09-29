@@ -38,6 +38,8 @@ export const ICONS = {
   shuffle: '<path d="M3 7h3.5L14 17h3.5M14 7h3.5L20 9.5M17.5 4.5 20 7l-2.5 2.5M3 17h3.5L10 12M17.5 19.5 20 17l-2.5-2.5"/>',
   bookmark: '<path d="M6 4h12v16l-6-4-6 4Z"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  smile: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2"/><path d="M9.3 9.8v.4M14.7 9.8v.4"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8"/>',
 };
 
 export function icon(name, cls = 'icon') {
@@ -50,6 +52,7 @@ export const NAV_ITEMS = [
   { id: 'history', label: 'History', icon: 'calendar' },
   { id: 'dashboard', label: 'Dashboard', icon: 'chart' },
   { id: 'gratitude', label: 'Gratitude', icon: 'jar' },
+  { id: 'mood', label: 'Mood', icon: 'smile' },
   { id: 'manage', label: 'Manage', icon: 'list' },
 ];
 

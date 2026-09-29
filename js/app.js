@@ -4,6 +4,7 @@ import { createHistoryView } from './ui-history.js';
 import { createManageView } from './ui-manage.js';
 import { createDashboardView } from './ui-dashboard.js';
 import { createGratitudeView } from './ui-gratitude.js';
+import { createMoodView } from './ui-mood.js';
 import { NAV_ITEMS, icon } from './data.js';
 import { flushQueue } from './api.js';
 import { showToast } from './ui-common.js';
@@ -32,10 +33,15 @@ function buildShell() {
   );
 
   views = {
-    today: createTodayView({ onLogout: showAuth, onOpenHistory: () => switchView('history') }),
+    today: createTodayView({
+      onLogout: showAuth,
+      onOpenHistory: () => switchView('history'),
+      onOpenMood: () => switchView('mood'),
+    }),
     history: createHistoryView(),
     dashboard: createDashboardView(),
     gratitude: createGratitudeView(),
+    mood: createMoodView(),
     manage: createManageView(),
   };
 
@@ -63,7 +69,7 @@ showAuth();
 // origin. A URL that's never been requested before is what forces a real
 // fetch through to origin; updateViaCache alone only affects the browser's
 // own local cache; it has no say over an upstream CDN.
-const SW_VERSION = 7;
+const SW_VERSION = 8;
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

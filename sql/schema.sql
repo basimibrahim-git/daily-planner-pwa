@@ -1,9 +1,8 @@
 -- Daily Planner PWA — database schema (fresh install)
 -- Import this via phpMyAdmin (or `mysql -u user -p dbname < schema.sql`) on Hostinger.
 --
--- Already have this app deployed with real data? Do NOT re-run this file —
--- use sql/migrate.sql instead, which upgrades an existing database in place
--- without touching your existing rows.
+-- Already have this app deployed with real data? Run sql/upgrade.sql instead,
+-- which brings an existing database up to date in place.
 
 CREATE TABLE IF NOT EXISTS app_config (
   `key` VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -40,14 +39,51 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE TABLE IF NOT EXISTS daily_notes (
   entry_date DATE NOT NULL PRIMARY KEY,
   note TEXT DEFAULT NULL,
-  doodle LONGTEXT DEFAULT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS gratitude_entries (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   text TEXT NOT NULL,
+  style VARCHAR(255) DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Photo files live in uploads/gratitude/; this table just maps them to notes.
+CREATE TABLE IF NOT EXISTS gratitude_photos (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  entry_id INT UNSIGNED NOT NULL,
+  filename VARCHAR(64) NOT NULL,
+  sort_order TINYINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_entry (entry_id),
+  CONSTRAINT fk_photo_entry FOREIGN KEY (entry_id) REFERENCES gratitude_entries(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Starts empty; api/mood.php seeds Poor / Neutral / Good on first use.
+CREATE TABLE IF NOT EXISTS mood_options (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  label VARCHAR(40) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  color VARCHAR(40) NOT NULL,
+  score TINYINT NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- score is copied from the mood at check-in time, so editing a mood's score
+-- later doesn't rewrite past averages.
+CREATE TABLE IF NOT EXISTS mood_checkins (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  entry_date DATE NOT NULL,
+  logged_time TIME NOT NULL,
+  option_id INT UNSIGNED NOT NULL,
+  score TINYINT NOT NULL,
+  note VARCHAR(280) DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_mood_date (entry_date),
+  CONSTRAINT fk_checkin_option FOREIGN KEY (option_id) REFERENCES mood_options(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS duas (
@@ -69,5 +105,4 @@ CREATE TABLE IF NOT EXISTS dua_favorites (
   CONSTRAINT fk_favorite_dua FOREIGN KEY (dua_id) REFERENCES duas(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- After importing this schema, also run the one-time dua import — see
--- "Importing the dua library" in README.md.
+-- The duas table starts empty — see "The dua library" in README.md.

@@ -1,6 +1,10 @@
 # Real database credentials — copy api/config.sample.php to api/config.php and fill it in
 api/config.php
 
+# Uploaded gratitude photos are personal data — keep only the folder's .htaccess
+uploads/*
+!uploads/.htaccess
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

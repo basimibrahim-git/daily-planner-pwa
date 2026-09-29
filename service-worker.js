@@ -1,4 +1,4 @@
-const CACHE_NAME = 'planner-shell-v7';
+const CACHE_NAME = 'planner-shell-v8';
 
 const PRECACHE_URLS = [
   './',
@@ -12,13 +12,14 @@ const PRECACHE_URLS = [
   './js/install.js',
   './js/ui-auth.js',
   './js/ui-checklist.js',
+  './js/ui-color-picker.js',
   './js/ui-common.js',
   './js/ui-dashboard.js',
-  './js/ui-doodle.js',
   './js/ui-gratitude.js',
   './js/ui-history.js',
   './js/ui-item-form.js',
   './js/ui-manage.js',
+  './js/ui-mood.js',
   './js/ui-today.js',
   './js/utils.js',
   './icons/icon-192.png',
@@ -26,6 +27,11 @@ const PRECACHE_URLS = [
   './fonts/Caveat.woff2',
   './fonts/Quicksand.woff2',
   './fonts/NotoNaskhArabic.woff2',
+  './fonts/DancingScript.woff2',
+  './fonts/PatrickHand.woff2',
+  './fonts/SpecialElite.woff2',
+  './fonts/PlayfairDisplay.woff2',
+  './fonts/PlayfairDisplay-Italic.woff2',
 ];
 
 // Fetches a URL with a cache-busting query so a CDN's edge cache can't hand

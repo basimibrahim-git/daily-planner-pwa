@@ -1,5 +1,5 @@
 import { fetchItems, fetchEntries, fetchHistory, setEntry } from './api.js';
-import { renderChecklistHtml, bindChecklist, bindChecklistDoodles } from './ui-checklist.js';
+import { renderChecklistHtml, bindChecklist } from './ui-checklist.js';
 import { icon } from './data.js';
 import { todayStr, addDays, friendlyDate, monthLabel, escapeHtml } from './utils.js';
 import { showToast, openModal } from './ui-common.js';
@@ -189,18 +189,6 @@ export function createHistoryView() {
           await setEntry(dateStr, item.id, value);
         } catch (e) {
           showToast(`Could not save note: ${e.message}`, 'error');
-        }
-      },
-    });
-    bindChecklistDoodles(body, {
-      getItems: () => dayItems,
-      getEntries: () => dayEntries,
-      onNoteChange: async (item, value) => {
-        dayEntries = { ...dayEntries, [item.id]: value };
-        try {
-          await setEntry(dateStr, item.id, value);
-        } catch (e) {
-          showToast(`Could not save doodle: ${e.message}`, 'error');
         }
       },
     });

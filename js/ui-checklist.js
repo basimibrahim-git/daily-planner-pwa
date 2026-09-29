@@ -1,23 +1,21 @@
 import { icon } from './data.js';
 import { escapeHtml } from './utils.js';
-import { doodlePadHtml, bindDoodlePad } from './ui-doodle.js';
 
 // 'standard' items store their entry value as JSON:
-// {"checked":0|1,"count":number,"note":string,"doodle":string|null}.
+// {"checked":0|1,"count":number,"note":string}.
 // 'text' items store their entry value as a plain string. Encoding/decoding is kept
 // entirely inside this module so callers just pass a string to setEntry either way.
 function decodeStandardValue(raw) {
-  if (raw === undefined || raw === null || raw === '') return { checked: 0, count: 0, note: '', doodle: null };
+  if (raw === undefined || raw === null || raw === '') return { checked: 0, count: 0, note: '' };
   try {
     const parsed = JSON.parse(raw);
     return {
       checked: parsed && parsed.checked ? 1 : 0,
       count: parsed && typeof parsed.count === 'number' ? parsed.count : Number(parsed?.count) || 0,
       note: parsed && typeof parsed.note === 'string' ? parsed.note : '',
-      doodle: parsed && typeof parsed.doodle === 'string' ? parsed.doodle : null,
     };
   } catch {
-    return { checked: 0, count: 0, note: '', doodle: null };
+    return { checked: 0, count: 0, note: '' };
   }
 }
 
@@ -26,7 +24,6 @@ function encodeStandardValue(v) {
     checked: v.checked ? 1 : 0,
     count: v.count || 0,
     note: v.note || '',
-    doodle: v.doodle || null,
   });
 }
 
@@ -78,7 +75,7 @@ function renderItemRow(item, rawValue, editable) {
     `;
   }
 
-  const { checked, count, note, doodle } = decodeStandardValue(rawValue);
+  const { checked, count, note } = decodeStandardValue(rawValue);
   const target = item.target_value ? parseFloat(item.target_value) : null;
   const unit = item.unit ? escapeHtml(item.unit) : '';
   const targetLabel = target ? `/${formatNum(target)}${unit ? ' ' + unit : ''}` : unit ? ` ${unit}` : '';
@@ -105,11 +102,10 @@ function renderItemRow(item, rawValue, editable) {
         <div class="item-label">${escapeHtml(item.label)}</div>
         ${counterHtml}
         ${checkboxHtml}
-        <button class="note-toggle-btn ${note || doodle ? 'has-note' : ''}" data-action="toggle-note" data-item-id="${item.id}" aria-label="Add details for ${escapeHtml(item.label)}">${icon('edit')}</button>
+        <button class="note-toggle-btn ${note ? 'has-note' : ''}" data-action="toggle-note" data-item-id="${item.id}" aria-label="Add details for ${escapeHtml(item.label)}">${icon('edit')}</button>
       </div>
       <div class="item-note-wrap collapsed" data-note-wrap="${item.id}">
         <textarea class="item-note-input" data-action="note-input" data-item-id="${item.id}" ${disabledAttr} placeholder="What did you do? Add any details here...">${escapeHtml(note)}</textarea>
-        ${editable ? doodlePadHtml(`item-${item.id}`) : ''}
       </div>
     </div>
   `;
@@ -204,24 +200,4 @@ export function bindChecklist(container, { getItems, getEntries, onChange, onNot
     },
     true // capture, since 'blur' doesn't bubble
   );
-}
-
-// Doodle canvases need direct per-element pointer listeners (not delegation),
-// so they're wired up separately — call this once after every render alongside
-// bindChecklist. Reuses onNoteChange since a doodle is just another field in
-// the same JSON value as the note text.
-export function bindChecklistDoodles(container, { getItems, getEntries, onNoteChange }) {
-  container.querySelectorAll('.doodle-pad[data-doodle-key^="item-"]').forEach((padEl) => {
-    const itemId = Number(padEl.dataset.doodleKey.replace('item-', ''));
-    const item = getItems().find((i) => i.id === itemId);
-    if (!item) return;
-    const current = decodeStandardValue(getEntries()[itemId]);
-    bindDoodlePad(padEl, {
-      initialDataUrl: current.doodle,
-      onChange: (doodle) => {
-        const latest = decodeStandardValue(getEntries()[itemId]);
-        onNoteChange?.(item, encodeStandardValue({ ...latest, doodle }));
-      },
-    });
-  });
 }

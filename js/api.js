@@ -80,21 +80,20 @@ export async function setEntry(date, itemId, value) {
   }
 }
 
-export async function setNote(date, note, doodle = null) {
-  const cached = (await cacheGet(`entries:${date}`)) || { date, items: [], entries: {}, note: '', noteDoodle: null };
+export async function setNote(date, note) {
+  const cached = (await cacheGet(`entries:${date}`)) || { date, items: [], entries: {}, note: '' };
   cached.note = note;
-  cached.noteDoodle = doodle;
   await cacheSet(`entries:${date}`, cached);
 
   try {
     await request('entries.php', {
       method: 'POST',
-      body: JSON.stringify({ action: 'note', date, note, doodle }),
+      body: JSON.stringify({ action: 'note', date, note }),
     });
     return { offline: false };
   } catch (e) {
     if (isNetworkError(e)) {
-      await queueAdd({ type: 'note', payload: { date, note, doodle } });
+      await queueAdd({ type: 'note', payload: { date, note } });
       return { offline: true };
     }
     throw e;
@@ -205,22 +204,47 @@ export async function fetchGratitude(limit = 200) {
   }
 }
 
-export async function addGratitude(text) {
+// Photos go up as multipart form data and need a live connection; text-only
+// notes use JSON and queue for later when offline, like checklist entries.
+export async function addGratitude(text, style, photos = []) {
+  if (photos.length) {
+    const form = new FormData();
+    form.append('text', text);
+    form.append('style', JSON.stringify(style));
+    photos.forEach((blob, i) => form.append('photos[]', blob, `photo-${i}.jpg`));
+    let res;
+    try {
+      res = await fetch(API_BASE + 'gratitude.php', { method: 'POST', credentials: 'same-origin', body: form });
+    } catch (e) {
+      if (isNetworkError(e)) throw new Error('Photos need a connection — try again when you are online.');
+      throw e;
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+    return { offline: false, count: data.count, id: data.id };
+  }
+
   const cached = (await cacheGet('gratitude:list')) || { entries: [], count: 0 };
-  const optimistic = { id: `local-${Date.now()}`, text, created_at: new Date().toISOString() };
+  const optimistic = { id: `local-${Date.now()}`, text, style, photos: [], created_at: new Date().toISOString() };
   const nextCached = { entries: [optimistic, ...cached.entries], count: cached.count + 1 };
-  await cacheSet('gratitude:list', nextCached);
 
   try {
-    const res = await request('gratitude.php', { method: 'POST', body: JSON.stringify({ text }) });
-    return { offline: false, count: res.count };
+    const res = await request('gratitude.php', { method: 'POST', body: JSON.stringify({ text, style }) });
+    optimistic.id = res.id;
+    await cacheSet('gratitude:list', nextCached);
+    return { offline: false, count: res.count, id: res.id };
   } catch (e) {
     if (isNetworkError(e)) {
-      await queueAdd({ type: 'gratitude-add', payload: { text } });
+      await cacheSet('gratitude:list', nextCached);
+      await queueAdd({ type: 'gratitude-add', payload: { text, style } });
       return { offline: true, count: nextCached.count };
     }
     throw e;
   }
+}
+
+export function photoUrl(photoId) {
+  return `${API_BASE}photo.php?id=${encodeURIComponent(photoId)}`;
 }
 
 export async function randomGratitude() {
@@ -238,6 +262,89 @@ export async function deleteGratitude(id) {
   }
   return res;
 }
+
+export async function fetchMoodDay(date) {
+  const key = `mood:day:${date}`;
+  try {
+    const data = await request(`mood.php?date=${encodeURIComponent(date)}`);
+    await cacheSet(key, data);
+    await cacheSet('mood:options', data.options);
+    return { ...data, offline: false };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      const cached = await cacheGet(key);
+      const options = await cacheGet('mood:options');
+      if (cached || options) {
+        return { date, options: options || cached.options, checkins: cached?.checkins || [], offline: true };
+      }
+    }
+    throw e;
+  }
+}
+
+export async function logMood({ date, time, optionId, note = '' }) {
+  const payload = { date, time, option_id: optionId, note };
+  const key = `mood:day:${date}`;
+  const cached = (await cacheGet(key)) || { date, options: (await cacheGet('mood:options')) || [], checkins: [] };
+
+  try {
+    const res = await request('mood.php', { method: 'POST', body: JSON.stringify({ action: 'checkin', ...payload }) });
+    const option = cached.options.find((o) => o.id === optionId);
+    cached.checkins = [...cached.checkins, { id: res.id, option_id: optionId, score: option?.score ?? 0, note, time }];
+    await cacheSet(key, cached);
+    return { offline: false, id: res.id };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      const option = cached.options.find((o) => o.id === optionId);
+      cached.checkins = [
+        ...cached.checkins,
+        { id: `local-${Date.now()}`, option_id: optionId, score: option?.score ?? 0, note, time },
+      ];
+      await cacheSet(key, cached);
+      await queueAdd({ type: 'mood-checkin', payload });
+      return { offline: true };
+    }
+    throw e;
+  }
+}
+
+export async function deleteMoodCheckin(id, date) {
+  await request(`mood.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const key = `mood:day:${date}`;
+  const cached = await cacheGet(key);
+  if (cached) {
+    cached.checkins = cached.checkins.filter((c) => c.id !== id);
+    await cacheSet(key, cached);
+  }
+}
+
+export async function fetchMoodStats(start, end) {
+  const key = `mood:stats:${start}:${end}`;
+  try {
+    const data = await request(`mood.php?action=stats&start=${start}&end=${end}`);
+    await cacheSet(key, data);
+    return { ...data, offline: false };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      const cached = await cacheGet(key);
+      if (cached) return { ...cached, offline: true };
+    }
+    throw e;
+  }
+}
+
+// Editing the mood list needs a live connection, like managing checklist items.
+async function moodOptionsCall(body) {
+  const res = await request('mood.php', { method: 'POST', body: JSON.stringify(body) });
+  await cacheSet('mood:options', res.options);
+  return res.options;
+}
+
+export const moodOptions = {
+  save: (option) => moodOptionsCall({ action: 'option-save', ...option }),
+  remove: (id) => moodOptionsCall({ action: 'option-remove', id }),
+  reorder: (order) => moodOptionsCall({ action: 'option-reorder', order }),
+};
 
 export async function pendingCount() {
   const all = await queueAll();
@@ -263,6 +370,8 @@ export async function flushQueue() {
           });
         } else if (action.type === 'gratitude-add') {
           await request('gratitude.php', { method: 'POST', body: JSON.stringify(action.payload) });
+        } else if (action.type === 'mood-checkin') {
+          await request('mood.php', { method: 'POST', body: JSON.stringify({ action: 'checkin', ...action.payload }) });
         }
         await queueRemove(action.id);
         synced++;

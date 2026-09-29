@@ -9,6 +9,11 @@ export function dateToStr(d) {
   return `${y}-${m}-${day}`;
 }
 
+export function nowTimeStr() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export function strToDate(s) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);

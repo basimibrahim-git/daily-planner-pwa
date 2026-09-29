@@ -5,10 +5,10 @@
 ![Stack](https://img.shields.io/badge/stack-PHP%20%2B%20MySQL%20%2B%20vanilla%20JS-6B4E8E.svg)
 
 A soft, illustrated daily planner PWA — prayers, Quran, water, habits, chores,
-a daily dua with favorites, notes (with doodles), a history calendar with
-streaks, a Dashboard of activity charts, and a Gratitude Jar. Installable on
-phone and tablet, works offline for checking things off (syncs once you're
-back online).
+a daily dua with favorites, notes, a history calendar with streaks, a
+Dashboard of activity charts, a Gratitude Jar (with styled text and photos),
+and a Mood tracker with its own dashboard. Installable on phone and tablet,
+works offline for checking things off (syncs once you're back online).
 
 No build step: plain HTML/CSS/JS on the frontend, PHP + MySQL on the backend.
 Clone it, fill in a database connection, upload — no bundler, no `npm install`.
@@ -23,6 +23,7 @@ Clone it, fill in a database connection, upload — no bundler, no `npm install`
 - [Offline behavior](#offline-behavior)
 - [How streaks are calculated](#how-streaks-are-calculated)
 - [Project structure](#project-structure)
+- [Backups](#backups)
 - [Security notes](#security-notes)
 - [License](#license)
 
@@ -32,20 +33,26 @@ Clone it, fill in a database connection, upload — no bundler, no `npm install`
   that category's checklist. Each item can show a checkbox, a counter (with
   an optional target/unit like "0/3 L"), or both — you choose per item in
   Manage. Tap the note icon on any item to jot free-text details for that
-  day (e.g. what you actually did for "House Chores") — and doodle right
-  there too, with a full color-wheel picker, if a drawing says it better than
-  words. The daily Notes card at the bottom has the same doodle option. Tap
-  the date next to the day arrows to jump straight to the History calendar.
-  A dua card rotates daily, sourced from your own `duas` table — heart it to
-  save it, and view all your saved duas from the bookmark icon.
+  day (e.g. what you actually did for "House Chores"). A "How are you
+  feeling?" card logs your mood in one tap. Tap the date next to the day
+  arrows to jump straight to the History calendar. A dua card rotates daily,
+  sourced from your own `duas` table — heart it to save it, and view all
+  your saved duas from the bookmark icon.
 - **History**: a month calendar heatmap of overall completion, with
   current/best streak, and tap any day to view or backfill it.
 - **Dashboard**: a completion trend chart, category breakdown, per-item
   ranking, and a dedicated Prayer & Quran section, over a 7/30/90-day window.
 - **Gratitude Jar**: type something you're grateful for and watch a hand
   fold it and drop it into an illustrated glass jar that fills up as you add
-  more; pick a random one back out any time and watch it get pulled out and
-  unfolded, with the option to delete it for good.
+  more. Style each note with one of six fonts, a size (S–XL), bold/italic
+  and any color from a color wheel, and attach up to 3 photos (resized on
+  your device before upload). Pick a random one back out any time and watch
+  it get pulled out and unfolded — photos open full-screen — with the option
+  to delete it for good.
+- **Mood**: check in as often as you like with Poor / Neutral / Good, or
+  your own moods (name, emoji, color and a 1–5 score), plus an optional note.
+  Its dashboard shows your daily-average trend, a breakdown by mood, and a
+  month calendar colored by each day's average, over 7/30/90 days.
 - **Manage**: add/edit/delete/reorder items, per category, including which
   controls (checkbox/counter) each one shows and which count toward your streak.
 
@@ -91,6 +98,15 @@ since it holds real credentials; never commit it.
 
 Upload everything (keeping the folder structure) to your web root, or a
 subfolder if you want the planner at a sub-path (e.g. `public_html/planner`).
+Include the `uploads/` folder with its `.htaccess` — gratitude photos are
+stored there, and that file blocks direct links to them (they're only served
+to you after login, via `api/photo.php`). PHP needs write access to it.
+
+### Upgrading an existing install
+
+Upload the new files first, then run [`sql/upgrade.sql`](sql/upgrade.sql) in
+phpMyAdmin. It's safe to run more than once. It adds the new tables/columns
+and permanently removes saved doodles (a feature that no longer exists).
 
 ### 4. First run
 
@@ -163,15 +179,17 @@ waiting.
 
 - The app shell (HTML/CSS/JS/icons/fonts) is cached, so it still opens
   without a connection.
-- Checking items off, adjusting counters, editing per-item notes/doodles, and
-  editing the daily notes all work offline — changes are queued on your
-  device and synced automatically the next time you're online.
+- Checking items off, adjusting counters, editing per-item notes, editing
+  the daily notes, and logging a mood all work offline — changes are queued
+  on your device and synced automatically the next time you're online.
 - Adding, editing, deleting, or reordering checklist items (the **Manage**
   tab) needs a live connection, since that's typically a one-time setup task
   rather than part of daily use.
-- Adding a Gratitude Jar entry works offline too (it queues and syncs like
-  checklist entries); picking a random one falls back to your last-synced
-  jar contents when offline. Favoriting a dua needs a live connection.
+- Adding a text-only Gratitude Jar entry works offline too (it queues and
+  syncs like checklist entries); notes with photos need a connection. Picking
+  a random one falls back to your last-synced jar contents when offline.
+- Favoriting a dua, editing your mood list, and deleting a mood check-in
+  need a live connection.
 
 ## How streaks are calculated
 
@@ -207,11 +225,22 @@ api/                      PHP backend (session auth + MySQL via PDO)
   entries.php               Daily checkbox/counter/note/text values + day notes
   history.php               Calendar heatmap data + streak
   stats.php                 Dashboard chart data
-  gratitude.php             Gratitude Jar entries (list/add/random/delete)
+  gratitude.php             Gratitude Jar entries (list/add/random/delete, styles, photo uploads)
+  photo.php                 Serves a gratitude photo to a logged-in user
+  mood.php                  Mood options, check-ins, and mood dashboard stats
   dua.php                   Today's dua, favorites
   lib.php                   Shared helpers (date validation, done/streak math)
+uploads/                  Gratitude photos (gitignored; .htaccess blocks direct access)
+fonts/                    Self-hosted fonts (app UI + gratitude note fonts)
 sql/schema.sql            Database schema to import for a fresh install
+sql/upgrade.sql           Brings an existing database up to date
 ```
+
+## Backups
+
+Back up **both** the MySQL database and the `uploads/` folder — the database
+only records which photo belongs to which note; the image files themselves
+live in `uploads/gratitude/`.
 
 ## Changing your password
 
@@ -223,6 +252,8 @@ Settings (⚙️ icon, top right of Today) → Change Password.
   `bootstrap.php`, and `lib.php`.
 - `api/config.php` is gitignored — only the placeholder `config.sample.php`
   is committed.
+- Photo uploads are checked to be real JPEG/PNG/WebP images (max 3 per note),
+  stored under random filenames, and never reachable by a direct URL.
 - The password is stored as a bcrypt hash (`password_hash`/`password_verify`),
   never in plain text.
 - The login session cookie is `httponly` and marked `secure` automatically
@@ -234,3 +265,7 @@ MIT — see [LICENSE](LICENSE).
 
 Dua content is sourced from the free, public [Hisnul Muslim (Fortress of the
 Muslim)](https://www.hisnmuslim.com) collection.
+
+The bundled fonts in `fonts/` are from [Google Fonts](https://fonts.google.com)
+and keep their own open licenses (SIL Open Font License; Special Elite is
+Apache 2.0).
