@@ -18,8 +18,23 @@ function totalCount(): int
     return (int) db()->query('SELECT COUNT(*) AS c FROM gratitude_entries')->fetch()['c'];
 }
 
-// Returns a normalized style array, or null for "default look". Anything that
-// isn't on the whitelist is dropped, since it's rendered into a style attribute.
+// One word's look. Anything off the whitelist is dropped, since it's rendered
+// into a style attribute.
+function normalizeOneStyle($raw): array
+{
+    $raw = is_array($raw) ? $raw : [];
+    return [
+        'font' => in_array($raw['font'] ?? '', FONT_KEYS, true) ? $raw['font'] : 'caveat',
+        'size' => in_array($raw['size'] ?? '', SIZE_KEYS, true) ? $raw['size'] : 'm',
+        'color' => isValidColor((string) ($raw['color'] ?? '')) ? $raw['color'] : null,
+        'bold' => !empty($raw['bold']) ? 1 : 0,
+        'italic' => !empty($raw['italic']) ? 1 : 0,
+    ];
+}
+
+// A note's styling is {"styles": [distinct looks], "words": [look index per word]}
+// so each word can have its own font/size/color. A single style object (one
+// look for the whole note) is accepted too.
 function normalizeStyle($raw): ?array
 {
     if (is_string($raw)) {
@@ -28,14 +43,19 @@ function normalizeStyle($raw): ?array
     if (!is_array($raw)) {
         return null;
     }
-    $style = [
-        'font' => in_array($raw['font'] ?? '', FONT_KEYS, true) ? $raw['font'] : 'quicksand',
-        'size' => in_array($raw['size'] ?? '', SIZE_KEYS, true) ? $raw['size'] : 'm',
-        'color' => isValidColor((string) ($raw['color'] ?? '')) ? $raw['color'] : null,
-        'bold' => !empty($raw['bold']) ? 1 : 0,
-        'italic' => !empty($raw['italic']) ? 1 : 0,
-    ];
-    return $style;
+    if (!isset($raw['styles'])) {
+        return ['styles' => [normalizeOneStyle($raw)], 'words' => []];
+    }
+    $styles = array_map('normalizeOneStyle', array_slice(array_values((array) $raw['styles']), 0, 40));
+    if (!$styles) {
+        return null;
+    }
+    $last = count($styles) - 1;
+    $words = array_map(
+        fn($i) => max(0, min($last, (int) $i)),
+        array_slice(array_values((array) ($raw['words'] ?? [])), 0, 400)
+    );
+    return ['styles' => $styles, 'words' => $words];
 }
 
 function withPhotos(array $rows): array

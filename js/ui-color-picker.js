@@ -72,6 +72,12 @@ export function colorPickerHtml(initial = QUICK_COLORS[0]) {
   `;
 }
 
+// Updates what the picker shows without firing onChange.
+export function setPickerColor(pickerEl, color) {
+  pickerEl.querySelector('.cp-current-dot').style.background = color;
+  pickerEl.querySelectorAll('.cp-swatch').forEach((b) => b.classList.toggle('selected', b.dataset.color === color));
+}
+
 export function bindColorPicker(pickerEl, { initial = QUICK_COLORS[0], onChange }) {
   const dot = pickerEl.querySelector('.cp-current-dot');
   const popover = pickerEl.querySelector('.cp-popover');

@@ -44,9 +44,10 @@ Clone it, fill in a database connection, upload — no bundler, no `npm install`
   ranking, and a dedicated Prayer & Quran section, over a 7/30/90-day window.
 - **Gratitude Jar**: type something you're grateful for and watch a hand
   fold it and drop it into an illustrated glass jar that fills up as you add
-  more. Style each note with one of six fonts, a size (S–XL), bold/italic
-  and any color from a color wheel, and attach up to 3 photos (resized on
-  your device before upload). Pick a random one back out any time and watch
+  more. Style your note word by word — tap any word in the preview to give
+  it its own font (six to choose from), size (S–XL), bold/italic and color
+  from a color wheel, or tap **Mix fonts** to give every word a different
+  font — and attach up to 3 photos (resized on your device before upload). Pick a random one back out any time and watch
   it get pulled out and unfolded — photos open full-screen — with the option
   to delete it for good.
 - **Mood**: check in as often as you like with Poor / Neutral / Good, or
@@ -104,9 +105,12 @@ to you after login, via `api/photo.php`). PHP needs write access to it.
 
 ### Upgrading an existing install
 
-Upload the new files first, then run [`sql/upgrade.sql`](sql/upgrade.sql) in
-phpMyAdmin. It's safe to run more than once. It adds the new tables/columns
-and permanently removes saved doodles (a feature that no longer exists).
+Just upload the new files — there's no SQL to run. The first request after a
+deploy upgrades the database by itself (see
+[`api/migrations.php`](api/migrations.php); the current version is kept in
+`app_config.schema_version`). Every step is safe to re-run. Upgrading to
+schema version 2 permanently removes saved doodles, a feature that no longer
+exists.
 
 ### 4. First run
 
@@ -230,10 +234,10 @@ api/                      PHP backend (session auth + MySQL via PDO)
   mood.php                  Mood options, check-ins, and mood dashboard stats
   dua.php                   Today's dua, favorites
   lib.php                   Shared helpers (date validation, done/streak math)
+  migrations.php            Automatic database upgrades, run on the first request after a deploy
 uploads/                  Gratitude photos (gitignored; .htaccess blocks direct access)
 fonts/                    Self-hosted fonts (app UI + gratitude note fonts)
 sql/schema.sql            Database schema to import for a fresh install
-sql/upgrade.sql           Brings an existing database up to date
 ```
 
 ## Backups
@@ -249,7 +253,7 @@ Settings (⚙️ icon, top right of Today) → Change Password.
 ## Security notes
 
 - `api/.htaccess` blocks direct browser access to `config.php`, `db.php`,
-  `bootstrap.php`, and `lib.php`.
+  `bootstrap.php`, `lib.php`, and `migrations.php`.
 - `api/config.php` is gitignored — only the placeholder `config.sample.php`
   is committed.
 - Photo uploads are checked to be real JPEG/PNG/WebP images (max 3 per note),

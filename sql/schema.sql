@@ -1,13 +1,16 @@
 -- Daily Planner PWA — database schema (fresh install)
 -- Import this via phpMyAdmin (or `mysql -u user -p dbname < schema.sql`) on Hostinger.
 --
--- Already have this app deployed with real data? Run sql/upgrade.sql instead,
--- which brings an existing database up to date in place.
+-- Already have this app deployed with real data? Don't re-run this file —
+-- the app upgrades an existing database by itself (see api/migrations.php).
 
 CREATE TABLE IF NOT EXISTS app_config (
   `key` VARCHAR(50) NOT NULL PRIMARY KEY,
   `value` TEXT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- This schema already matches the latest migration in api/migrations.php.
+INSERT IGNORE INTO app_config (`key`, `value`) VALUES ('schema_version', '2');
 
 CREATE TABLE IF NOT EXISTS items (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -45,7 +48,7 @@ CREATE TABLE IF NOT EXISTS daily_notes (
 CREATE TABLE IF NOT EXISTS gratitude_entries (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   text TEXT NOT NULL,
-  style VARCHAR(255) DEFAULT NULL,
+  style TEXT DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

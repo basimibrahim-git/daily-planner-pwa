@@ -56,3 +56,11 @@ set_exception_handler(function (Throwable $e): void {
     error_log('[planner] ' . $e->getMessage());
     respond(['error' => 'Server error'], 500);
 });
+
+require_once __DIR__ . '/migrations.php';
+try {
+    runMigrations();
+} catch (Throwable $e) {
+    // Keep the rest of the app usable; the upgrade is retried on the next request.
+    error_log('[planner] migration failed: ' . $e->getMessage());
+}

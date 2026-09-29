@@ -1,4 +1,4 @@
 # Block direct access to files that should only ever be `require`d by PHP.
-<FilesMatch "^(config|db|bootstrap|lib)\.php$">
+<FilesMatch "^(config|db|bootstrap|lib|migrations)\.php$">
     Require all denied
 </FilesMatch>

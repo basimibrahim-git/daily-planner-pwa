@@ -3,7 +3,7 @@ import { cacheGet } from './db-local.js';
 import { icon } from './data.js';
 import { escapeHtml } from './utils.js';
 import { showToast, openModal, closeModal } from './ui-common.js';
-import { colorPickerHtml, bindColorPicker, isValidColor } from './ui-color-picker.js';
+import { colorPickerHtml, bindColorPicker, setPickerColor, isValidColor } from './ui-color-picker.js';
 
 const PALETTE = ['#F0729A', '#E8B84B', '#6FB3E0', '#5FC9A8', '#A98FD9', '#F0956B', '#F0D45A', '#C7568C'];
 const MAX_VISUAL_PAPERS = 26; // the jar is visually "full" around this many notes
@@ -265,6 +265,69 @@ function saveLastStyle(style) {
   }
 }
 
+function splitWords(text) {
+  return text.split(/\s+/).filter(Boolean);
+}
+
+// Stored styling is {styles: [distinct looks], words: [look index per word]};
+// older notes have one style object (or none) for the whole note.
+function styleSpec(style) {
+  if (style && Array.isArray(style.styles) && style.styles.length) {
+    return { styles: style.styles, words: Array.isArray(style.words) ? style.words : [] };
+  }
+  return { styles: [style || DEFAULT_STYLE], words: [] };
+}
+
+function compactSpec(wordStyles) {
+  const styles = [];
+  const keys = new Map();
+  const words = wordStyles.map((s) => {
+    const key = JSON.stringify(s);
+    if (!keys.has(key)) {
+      keys.set(key, styles.length);
+      styles.push(s);
+    }
+    return keys.get(key);
+  });
+  return { styles: styles.length ? styles : [DEFAULT_STYLE], words };
+}
+
+function styledTextHtml(text, style) {
+  const { styles, words } = styleSpec(style);
+  let w = 0;
+  return text
+    .split(/(\s+)/)
+    .map((token) => {
+      if (!token) return '';
+      if (/^\s+$/.test(token)) return escapeHtml(token);
+      const s = styles[words[w++] ?? 0] || styles[0];
+      return `<span style="${styleCss(s)}">${escapeHtml(token)}</span>`;
+    })
+    .join('');
+}
+
+// Keeps each word's style when the text is edited: unchanged words at the
+// start and end keep theirs, edited words in the middle keep the style of the
+// word that was in that spot, and brand-new words copy the word before them.
+function carryStyles(oldWords, oldStyles, newWords, fallback) {
+  let pre = 0;
+  while (pre < oldWords.length && pre < newWords.length && oldWords[pre] === newWords[pre]) pre++;
+  let suf = 0;
+  while (
+    suf < oldWords.length - pre &&
+    suf < newWords.length - pre &&
+    oldWords[oldWords.length - 1 - suf] === newWords[newWords.length - 1 - suf]
+  ) suf++;
+  const out = oldStyles.slice(0, pre);
+  const midLen = newWords.length - pre - suf;
+  for (let k = 0; k < midLen; k++) {
+    const old = oldStyles[pre + k];
+    const prev = out[out.length - 1];
+    out.push({ ...(k < oldWords.length - pre - suf && old ? old : prev || fallback) });
+  }
+  return out.concat(oldStyles.slice(oldStyles.length - suf));
+}
+
 function loadImageElement(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -315,7 +378,10 @@ export function createGratitudeView() {
   let container = null;
   let entries = [];
   let count = 0;
-  let style = loadLastStyle();
+  let baseStyle = loadLastStyle(); // look for new words, and for "style everything"
+  let wordStyles = []; // one style per word currently typed
+  let lastWords = [];
+  let selected = new Set(); // indexes of words tapped in the preview
   let pendingPhotos = []; // [{ blob, url }]
 
   async function mount(root) {
@@ -351,33 +417,36 @@ export function createGratitudeView() {
 
       <div class="gratitude-compose">
         <div class="gratitude-input-row">
-          <textarea id="gratitude-input" rows="1" placeholder="I'm grateful for..." maxlength="500" style="${styleCss(style)}"></textarea>
+          <textarea id="gratitude-input" rows="1" placeholder="I'm grateful for..." maxlength="500"></textarea>
           <button class="gratitude-add-btn" id="gratitude-add" aria-label="Add to jar">${icon('plus')}</button>
+        </div>
+        <div class="word-preview-wrap hidden" id="word-preview-wrap">
+          <div class="word-preview" id="word-preview"></div>
+          <div class="word-hint" id="word-hint"></div>
         </div>
         <div class="photo-previews" id="photo-previews"></div>
         <div class="compose-tools">
           <button type="button" class="tool-btn" id="toggle-style" aria-expanded="false"><span class="tool-aa">Aa</span> Style</button>
+          <button type="button" class="tool-btn" id="mix-fonts">${icon('shuffle')} Mix fonts</button>
           <button type="button" class="tool-btn" id="add-photo">${icon('image')} Photo <span class="tool-count" id="photo-count"></span></button>
           <input type="file" id="photo-input" accept="image/*" multiple hidden />
         </div>
         <div class="style-panel hidden" id="style-panel">
-          <div class="style-label">Font</div>
+          <div class="style-label" id="style-target">Font</div>
           <div class="font-chips">
             ${FONTS.map(
-              (f) => `<button type="button" class="font-chip ${f.key === style.font ? 'selected' : ''}" data-font="${f.key}" style="font-family:${f.family}">${f.label}</button>`
+              (f) => `<button type="button" class="font-chip" data-font="${f.key}" style="font-family:${f.family}">${f.label}</button>`
             ).join('')}
           </div>
           <div class="style-label">Size &amp; emphasis</div>
           <div class="radio-group">
-            ${SIZES.map(
-              (z) => `<button type="button" class="radio-chip ${z.key === style.size ? 'selected' : ''}" data-size="${z.key}">${z.label}</button>`
-            ).join('')}
+            ${SIZES.map((z) => `<button type="button" class="radio-chip" data-size="${z.key}">${z.label}</button>`).join('')}
             <span class="chip-divider"></span>
-            <button type="button" class="radio-chip ${style.bold ? 'selected' : ''}" data-toggle="bold" aria-label="Bold"><b>B</b></button>
-            <button type="button" class="radio-chip ${style.italic ? 'selected' : ''}" data-toggle="italic" aria-label="Italic"><i>I</i></button>
+            <button type="button" class="radio-chip" data-toggle="bold" aria-label="Bold"><b>B</b></button>
+            <button type="button" class="radio-chip" data-toggle="italic" aria-label="Italic"><i>I</i></button>
           </div>
           <div class="style-label">Color</div>
-          ${colorPickerHtml(style.color)}
+          ${colorPickerHtml(baseStyle.color)}
         </div>
       </div>
 
@@ -395,9 +464,13 @@ export function createGratitudeView() {
         submit();
       }
     });
-    input.addEventListener('input', () => autoGrow(input));
+    input.addEventListener('input', () => {
+      autoGrow(input);
+      syncWords(input.value);
+    });
 
-    bindStylePanel(input);
+    bindStylePanel();
+    syncWords(input.value);
     bindPhotoPicker();
     renderPhotoPreviews();
 
@@ -409,49 +482,130 @@ export function createGratitudeView() {
     input.style.height = `${Math.min(input.scrollHeight + 3, 180)}px`;
   }
 
-  function bindStylePanel(input) {
+  function syncWords(text) {
+    const words = splitWords(text);
+    wordStyles = carryStyles(lastWords, wordStyles, words, baseStyle);
+    lastWords = words;
+    selected = new Set([...selected].filter((i) => i < words.length));
+    renderWordPreview();
+    updateControls();
+  }
+
+  // Words the style controls act on: the tapped ones, or all of them.
+  function targets() {
+    return selected.size ? [...selected] : wordStyles.map((_, i) => i);
+  }
+
+  function renderWordPreview() {
+    const wrap = container.querySelector('#word-preview-wrap');
+    const preview = container.querySelector('#word-preview');
+    const input = container.querySelector('#gratitude-input');
+    wrap.classList.toggle('hidden', lastWords.length === 0);
+    let w = 0;
+    preview.innerHTML = input.value
+      .split(/(\s+)/)
+      .map((token) => {
+        if (!token) return '';
+        if (/^\s+$/.test(token)) return escapeHtml(token);
+        const i = w++;
+        return `<button type="button" class="wp-word ${selected.has(i) ? 'selected' : ''}" data-w="${i}" style="${styleCss(wordStyles[i])}">${escapeHtml(token)}</button>`;
+      })
+      .join('');
+    const n = selected.size;
+    container.querySelector('#word-hint').innerHTML = n
+      ? `${n} word${n === 1 ? '' : 's'} selected · <button type="button" class="link-btn" id="clear-selection">Style all words</button>`
+      : 'Tap a word to give it its own font, size or color.';
+    container.querySelector('#clear-selection')?.addEventListener('click', () => {
+      selected.clear();
+      renderWordPreview();
+      updateControls();
+    });
+  }
+
+  function updateControls() {
+    const panel = container.querySelector('#style-panel');
+    const t = targets();
+    const ref = t.length ? wordStyles[t[0]] : baseStyle;
+    panel.querySelectorAll('[data-font]').forEach((b) => b.classList.toggle('selected', b.dataset.font === ref.font));
+    panel.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('selected', b.dataset.size === ref.size));
+    panel.querySelectorAll('[data-toggle]').forEach((b) => b.classList.toggle('selected', !!ref[b.dataset.toggle]));
+    setPickerColor(panel.querySelector('.color-picker'), ref.color);
+    container.querySelector('#style-target').textContent = selected.size
+      ? `Font · ${selected.size} selected word${selected.size === 1 ? '' : 's'}`
+      : 'Font · all words';
+  }
+
+  function applyStyle(key, value) {
+    for (const i of targets()) wordStyles[i] = { ...wordStyles[i], [key]: value };
+    if (!selected.size) {
+      baseStyle = { ...baseStyle, [key]: value };
+      saveLastStyle(baseStyle);
+    }
+    renderWordPreview();
+    updateControls();
+  }
+
+  function openStylePanel(open) {
     const panel = container.querySelector('#style-panel');
     const toggle = container.querySelector('#toggle-style');
-    toggle.addEventListener('click', () => {
-      const open = panel.classList.toggle('hidden') === false;
-      toggle.classList.toggle('active', open);
-      toggle.setAttribute('aria-expanded', String(open));
+    panel.classList.toggle('hidden', !open);
+    toggle.classList.toggle('active', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  }
+
+  // Gives each word (or each selected word) a different font from the word before it.
+  function mixFonts() {
+    const t = targets();
+    if (!t.length) {
+      showToast('Type something first, then mix the fonts.');
+      return;
+    }
+    let prev = null;
+    for (const i of t.sort((a, b) => a - b)) {
+      const choices = FONTS.filter((f) => f.key !== prev);
+      const font = choices[Math.floor(Math.random() * choices.length)].key;
+      wordStyles[i] = { ...wordStyles[i], font };
+      prev = font;
+    }
+    renderWordPreview();
+    updateControls();
+  }
+
+  function bindStylePanel() {
+    const panel = container.querySelector('#style-panel');
+    container.querySelector('#toggle-style').addEventListener('click', () =>
+      openStylePanel(panel.classList.contains('hidden'))
+    );
+    container.querySelector('#mix-fonts').addEventListener('click', mixFonts);
+
+    container.querySelector('#word-preview').addEventListener('click', (e) => {
+      const word = e.target.closest('[data-w]');
+      if (!word) return;
+      const i = Number(word.dataset.w);
+      if (selected.has(i)) selected.delete(i);
+      else selected.add(i);
+      openStylePanel(true);
+      renderWordPreview();
+      updateControls();
     });
 
-    const apply = () => {
-      input.setAttribute('style', styleCss(style));
-      autoGrow(input);
-      saveLastStyle(style);
-    };
-
     panel.querySelectorAll('[data-font]').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        style = { ...style, font: btn.dataset.font };
-        panel.querySelectorAll('[data-font]').forEach((b) => b.classList.toggle('selected', b === btn));
-        apply();
-      })
+      btn.addEventListener('click', () => applyStyle('font', btn.dataset.font))
     );
     panel.querySelectorAll('[data-size]').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        style = { ...style, size: btn.dataset.size };
-        panel.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('selected', b === btn));
-        apply();
-      })
+      btn.addEventListener('click', () => applyStyle('size', btn.dataset.size))
     );
     panel.querySelectorAll('[data-toggle]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const key = btn.dataset.toggle;
-        style = { ...style, [key]: style[key] ? 0 : 1 };
-        btn.classList.toggle('selected', !!style[key]);
-        apply();
+        const t = targets();
+        const allOn = t.length ? t.every((i) => wordStyles[i][key]) : !!baseStyle[key];
+        applyStyle(key, allOn ? 0 : 1);
       })
     );
     bindColorPicker(panel.querySelector('.color-picker'), {
-      initial: style.color,
-      onChange: (color) => {
-        style = { ...style, color };
-        apply();
-      },
+      initial: baseStyle.color,
+      onChange: (color) => applyStyle('color', color),
     });
   }
 
@@ -510,13 +664,16 @@ export function createGratitudeView() {
     addBtn.disabled = true;
 
     const photos = pendingPhotos;
-    const noteStyle = { ...style };
+    const savedWordStyles = wordStyles;
+    const noteStyle = wordStyles.length ? compactSpec(wordStyles) : { styles: [baseStyle], words: [] };
     const jarWrap = container.querySelector('#jar-wrap');
     const animPromise = jarWrap
       ? playAddAnimation(addBtn.getBoundingClientRect(), jarWrap.getBoundingClientRect(), PALETTE[count % PALETTE.length])
       : Promise.resolve();
     input.value = '';
     autoGrow(input);
+    selected.clear();
+    syncWords('');
     pendingPhotos = [];
     renderPhotoPreviews();
 
@@ -541,6 +698,9 @@ export function createGratitudeView() {
       // Put the note back so nothing typed or attached is lost.
       input.value = text;
       autoGrow(input);
+      wordStyles = savedWordStyles;
+      lastWords = splitWords(text);
+      renderWordPreview();
       pendingPhotos = photos;
       renderPhotoPreviews();
     }
@@ -598,7 +758,7 @@ export function createGratitudeView() {
     const sheet = openModal(`
       <div class="gratitude-reveal">
         <div class="fold-icon">${icon('jar')}</div>
-        ${entry.text ? `<div class="reveal-text" style="${styleCss(entry.style)}">${escapeHtml(entry.text)}</div>` : ''}
+        ${entry.text ? `<div class="reveal-text">${styledTextHtml(entry.text, entry.style)}</div>` : ''}
         ${
           photos.length
             ? `<div class="reveal-photos count-${photos.length}">
