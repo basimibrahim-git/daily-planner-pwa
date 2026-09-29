@@ -1,4 +1,4 @@
-const CACHE_NAME = 'planner-shell-v8';
+const CACHE_NAME = 'planner-shell-v9';
 
 const PRECACHE_URLS = [
   './',

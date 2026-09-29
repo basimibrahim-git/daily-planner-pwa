@@ -91,6 +91,14 @@ async function confirmDeleteCheckin(id, date) {
   }
 }
 
+function addMoodTileHtml(cls, id) {
+  return `
+    <button class="${cls} mood-add" id="${id}" aria-label="Add a mood">
+      <span class="mood-emoji">${icon('plus')}</span>
+      <span class="mood-lbl">Add mood</span>
+    </button>`;
+}
+
 // ---------- Today page quick card ----------
 
 export async function mountMoodQuickCard(el, { onOpenMood } = {}) {
@@ -132,11 +140,13 @@ export async function mountMoodQuickCard(el, { onOpenMood } = {}) {
             </button>`
             )
             .join('')}
+          ${addMoodTileHtml('mood-quick-btn', 'mood-quick-add')}
         </div>
         <div class="mood-quick-status">${escapeHtml(statusText())}</div>
       </div>
     `;
     el.querySelector('#mood-quick-open').addEventListener('click', () => onOpenMood?.());
+    el.querySelector('#mood-quick-add').addEventListener('click', () => onOpenMood?.({ addMood: true }));
     el.querySelectorAll('[data-option]').forEach((btn) =>
       btn.addEventListener('click', async () => {
         const optionId = Number(btn.dataset.option);
@@ -281,7 +291,7 @@ export function createMoodView() {
           <div class="date-sub">How are you feeling?</div>
         </div>
         <div class="header-actions">
-          <button class="icon-btn" id="manage-moods" aria-label="Edit moods">${icon('settings')}</button>
+          <button class="btn btn-ghost btn-sm" id="manage-moods">${icon('edit')} Edit moods</button>
         </div>
       </div>
 
@@ -297,6 +307,7 @@ export function createMoodView() {
             </button>`
             )
             .join('')}
+          ${addMoodTileHtml('mood-option', 'add-mood-tile')}
         </div>
         <textarea id="mood-note" class="mood-note" maxlength="280" placeholder="What's behind it? (optional)"></textarea>
         <button class="btn btn-primary" id="log-mood" ${selectedOptionId ? '' : 'disabled'}>Log mood</button>
@@ -315,11 +326,12 @@ export function createMoodView() {
     `;
 
     container.querySelector('#manage-moods').addEventListener('click', openManageMoods);
+    container.querySelector('#add-mood-tile').addEventListener('click', () => openMoodForm(null));
 
-    container.querySelectorAll('.mood-option').forEach((btn) =>
+    container.querySelectorAll('.mood-option[data-option]').forEach((btn) =>
       btn.addEventListener('click', () => {
         selectedOptionId = Number(btn.dataset.option);
-        container.querySelectorAll('.mood-option').forEach((b) => b.classList.toggle('selected', b === btn));
+        container.querySelectorAll('.mood-option[data-option]').forEach((b) => b.classList.toggle('selected', b === btn));
         container.querySelector('#log-mood').disabled = false;
       })
     );
@@ -639,5 +651,5 @@ export function createMoodView() {
     });
   }
 
-  return { mount };
+  return { mount, openAddMood: () => openMoodForm(null) };
 }

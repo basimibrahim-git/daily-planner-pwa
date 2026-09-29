@@ -1618,6 +1618,17 @@ h1, h2, h3 { margin: 0; }
 
 .mood-emoji { font-size: 28px; line-height: 1; }
 
+.mood-quick-btn.mood-add,
+.mood-option.mood-add {
+  background: transparent;
+  border: 2px dashed var(--line);
+  color: var(--purple-deep);
+}
+
+.mood-add .mood-emoji { height: 28px; display: flex; align-items: center; }
+.mood-add .mood-emoji .icon { width: 22px; height: 22px; }
+.mood-add .mood-lbl { color: var(--purple-deep); }
+
 .mood-lbl {
   font-size: 12px;
   font-weight: 700;

@@ -36,7 +36,10 @@ function buildShell() {
     today: createTodayView({
       onLogout: showAuth,
       onOpenHistory: () => switchView('history'),
-      onOpenMood: () => switchView('mood'),
+      onOpenMood: async ({ addMood = false } = {}) => {
+        await switchView('mood');
+        if (addMood) views.mood.openAddMood();
+      },
     }),
     history: createHistoryView(),
     dashboard: createDashboardView(),
@@ -69,7 +72,7 @@ showAuth();
 // origin. A URL that's never been requested before is what forces a real
 // fetch through to origin; updateViaCache alone only affects the browser's
 // own local cache; it has no say over an upstream CDN.
-const SW_VERSION = 8;
+const SW_VERSION = 9;
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
